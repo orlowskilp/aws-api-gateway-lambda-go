@@ -1,0 +1,43 @@
+version: '3'
+
+services:
+  env:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: latest
+        USERNAME: vscode
+        AWS_REGION: ap-southeast-1
+
+    init: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker-host.sock 
+      - ..:/workspace:cached
+
+    command: sleep infinity 
+
+    cap_add:
+     - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+
+    user: vscode
+
+    depends_on:
+      - dynamodb
+    environment:
+      - AWS_DEFAULT_REGION=ap-southeast-1
+      - AWS_ACCESS_KEY_ID=x
+      - AWS_SECRET_ACCESS_KEY=x
+
+  dynamodb:
+    image: amazon/dynamodb-local
+    restart: on-failure
+    command: >-
+      -jar DynamoDBLocal.jar
+      -sharedDb
+    environment:
+      - AWS_DEFAULT_REGION=ap-southeast-1
+      - AWS_ACCESS_KEY_ID=x
+      - AWS_SECRET_ACCESS_KEY=x

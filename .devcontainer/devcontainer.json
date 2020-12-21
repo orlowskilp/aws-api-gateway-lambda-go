@@ -1,0 +1,22 @@
+{
+	"name": "CentOS",
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "env",
+	"workspaceFolder": "/workspace",
+
+	"remoteEnv": {
+		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+	},
+
+	"settings": { 
+		"terminal.integrated.shell.linux": "/bin/bash"
+	},
+
+	"extensions": [
+		"ms-azuretools.vscode-docker",
+		"golang.go",
+		"redhat.vscode-yaml"
+	],
+
+	"remoteUser": "vscode"
+}
