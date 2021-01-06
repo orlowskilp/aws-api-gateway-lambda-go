@@ -1,0 +1,152 @@
+name: Build and Deploy
+
+on: 
+  push:
+    branches:
+      - master
+      - staging
+      - cicd-*
+  pull_request:
+    branches:
+      - master
+      - staging
+      - cicd-*
+
+env:
+  AWS_DEFAULT_REGION: ap-southeast-1
+  AWS_DEFAULT_OUTPUT: json
+  SERVICE_VERSION: $(cat ./VERSION)
+  SERVICE_NAME: http-request-handler
+  TARBALL_NAME: tarball.tar.gz
+
+jobs:
+  make-tarball:
+    name: Make tarball
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v2
+
+      - name: Make tarball
+        run: |
+          git archive \
+            --worktree-attributes \
+            --format=tar.gz --prefix=${{ env.SERVICE_NAME }}-${{ env.SERVICE_VERSION }}/ \
+            -o ./${{ env.TARBALL_NAME }} ${GITHUB_REF#refs/heads/}
+
+      - name: Store tarball
+        uses: actions/upload-artifact@v2
+        with:
+          name: tarball
+          path: |
+            ./${{ env.TARBALL_NAME }}
+            ./VERSION
+
+  build:
+    name: Build
+    runs-on: ubuntu-18.04
+    needs: make-tarball
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v2
+        with:
+          name: tarball
+
+      - name: Extract tarball
+        run: tar xzf ${{ env.TARBALL_NAME }} --strip 1
+
+      - name: Build code
+        run: make TARGET=${{ env.SERVICE_NAME }} all
+
+      - name: Store zipfile
+        uses: actions/upload-artifact@v2
+        with:
+          name: zipfile
+          path: ./${{ env.SERVICE_NAME }}.zip
+
+  run-tests:
+    name: Run tests
+    runs-on: ubuntu-18.04
+    needs: make-tarball
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v2
+        with:
+          name: tarball
+
+      - name: Extract tarball
+        run: tar xzf ${{ env.TARBALL_NAME }} --strip 1
+
+      - name: Run unit tests
+        run: make test
+
+  put-tarball-in-s3:
+    name: Store tarball in S3
+    runs-on: ubuntu-18.04
+    needs: [build, run-tests]
+    steps:
+      - name: Download tarball
+        uses: actions/download-artifact@v2
+        with:
+          name: tarball
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Put tarball to S3
+        env:
+          S3_PREFIX: ${{ secrets.S3_BUCKET_NAME }}/${{ env.SERVICE_NAME }}/${GITHUB_REF#refs/heads/}
+          ARTIFACT_NAME: ${{ env.SERVICE_NAME }}-${{ env.SERVICE_VERSION }}-${GITHUB_SHA}.tar.gz
+        run: |
+          aws s3 cp ${{ env.TARBALL_NAME }} ${{ env.S3_PREFIX }}/${{ env.ARTIFACT_NAME }}
+
+  put-function-zip-in-s3:
+    name: Store zipfile with function in S3
+    runs-on: ubuntu-18.04
+    needs: [build, run-tests]
+    steps:
+      - name: Download zipfile
+        uses: actions/download-artifact@v2
+        with:
+          name: zipfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Put zipfile to S3
+        env:
+          S3_PREFIX: ${{ secrets.S3_BUCKET_NAME }}/${{ env.SERVICE_NAME }}/zipfile/latest
+          ARTIFACT_NAME: ${{ env.SERVICE_NAME }}.zip
+        run: |
+          aws s3 cp ${{ env.ARTIFACT_NAME }} ${{ env.S3_PREFIX }}/${{ env.ARTIFACT_NAME }}
+
+  update-lambda-code:
+    name: Upload Lambda function code
+    runs-on: ubuntu-18.04
+    needs: [build, run-tests]
+    steps:
+      - name: Download zipfile
+        uses: actions/download-artifact@v2
+        with:
+          name: zipfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Update lambda function code
+        run: |
+          aws lambda update-function-code \
+          --function-name ${{ env.SERVICE_NAME }} \
+          --zip-file fileb://${{ env.SERVICE_NAME }}.zip
