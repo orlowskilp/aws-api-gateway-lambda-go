@@ -1,0 +1,22 @@
+name: Quick check
+
+on:
+  push:
+    branches-ignore:
+      - master
+      - staging
+      - readme
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@v2
+
+      - name: Build
+        run: make all
+
+      - name: Run unit tests
+        run: make test
