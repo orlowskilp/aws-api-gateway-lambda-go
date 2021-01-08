@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Backend resources for REST API (DynamoDB, Lambda, IAM)
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+        - Label:
+            default: Parameters for backend resources
+          Parameters:
+            - TableName
+            - LambdaFunctionName
+            - HandlerName
+            - ArtifactS3Bucket
+            - Owner
+
+    ParameterLabels:
+      TableName:
+        default: Name of DynamoDB table
+      LambdaFunctionName:
+        default: Name of Lambda function
+      HandlerName:
+        default: Lambda function handler
+      ArtifactS3Bucket:
+        default: S3 bucket with artifacts
+      Owner:
+        default: Owner of created resources
+
+Parameters:
+  TableName:
+    Type: String
+    Default: sample-table
+    MinLength: 1
+    MaxLength: 64
+    Description: Name of DynamoDB table used in the backend
+
+  LambdaFunctionName:
+    Type: String
+    Default: http-request-handler
+    MinLength: 1
+    MaxLength: 32
+    Description: Name of Lambda function processing requests
+
+  HandlerName:
+    Type: String
+    Default: http-request-handler
+    MinLength: 1
+    MaxLength: 64
+    Description: Name of binary with the Lambda function
+
+  ArtifactS3Bucket:
+    Type: String
+    Default: my-bucket.my-domain.com
+    MinLength: 1
+    MaxLength: 64
+    Description: Name of S3 bucket for storing artifacts
+    
+  Owner:
+    Type: String
+    Default: me
+    MinLength: 1
+    MaxLength: 64
+    Description: Owner (stored in tags)
+
+Resources:
+  # Backend DynamoDB table
+  DynamoDBTable: 
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      AttributeDefinitions: 
+        - AttributeName: Key
+          AttributeType: S
+      KeySchema: 
+        - AttributeName: Key
+          KeyType: HASH
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      Tags:
+        - Key: Name
+          Value: !Ref TableName
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Stack
+          Value: !Ref AWS::StackName
+
+  # Execution role for Lambda function
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${LambdaFunctionName}-execution-role
+      Description: Sample API Lambda execution role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Tags:
+        - Key: Name
+          Value: !Ref LambdaFunctionName
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Stack
+          Value: !Ref AWS::StackName
+
+  # Managed policy attached to Lambda execution role
+  LambdaExecutionPolicy:
+    DependsOn:
+      - LambdaExecutionRole
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${LambdaFunctionName}-policy
+      Description: Allows Lambda function access backend resources
+      Roles:
+        - !Ref LambdaExecutionRole
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Sid: CreateLogGroup
+            Effect: Allow
+            Action: logs:CreateLogGroup
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+          - Sid: WriteLogs
+            Effect: Allow
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${LambdaFunctionName}:*
+          - Sid: ReadAndWriteToDynamoDBTable
+            Effect: Allow
+            Action:
+              - dynamodb:BatchGet*
+              - dynamodb:DescribeStream
+              - dynamodb:DescribeTable
+              - dynamodb:Get*
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchWrite*
+              - dynamodb:CreateTable
+              - dynamodb:Delete*
+              - dynamodb:Update*
+              - dynamodb:PutItem
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+
+  HTTPRequestHandlerLambdaFunction:
+    DependsOn:
+     - LambdaExecutionRole
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaFunctionName
+      Description: HTTP request handler
+      Runtime: go1.x
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: !Ref HandlerName
+      Code:
+        S3Bucket: !Ref ArtifactS3Bucket
+        S3Key: !Sub ${LambdaFunctionName}/zipfile/latest/${LambdaFunctionName}.zip
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+
+Outputs:
+  DynamoDBTableArn:
+    Description: ARN of DynamoDB table
+    Value: !GetAtt DynamoDBTable.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-DynamoDBTableArn
+
+  LambdaExecutionRoleArn:
+    Description: ARN of Lambda execution role
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-LambdaExecutionRoleArn
+
+  HTTPRequestHandlerLambdaFunctionArn:
+    Description: ARN of Lambda function
+    Value: !GetAtt HTTPRequestHandlerLambdaFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-HTTPRequestHandlerLambdaFunctionArn
