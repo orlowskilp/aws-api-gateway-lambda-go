@@ -56,9 +56,66 @@ func handleGetRequest(key string) events.APIGatewayProxyResponse {
 	}
 }
 
+func handlePutRequest(key string, value string) events.APIGatewayProxyResponse {
+	if len(key) <= 0 || len(value) <= 0 {
+		message := "Key and value parameters must not be empty"
+		return events.APIGatewayProxyResponse{
+			Body:       message,
+			StatusCode: httpServerErrorCode,
+		}
+	}
+
+	table := dynamodb.InitService(dynamodb.Config{
+		Region: defaultAWSRegion,
+	})
+
+	err := table.PutItem(key, value)
+
+	if err != nil {
+		log.Fatalln(err.Error())
+		return events.APIGatewayProxyResponse{
+			Body:       err.Error(),
+			StatusCode: httpServerErrorCode,
+		}
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: httpSuccessCode,
+	}
+}
+
+func handleDeleteRequest(key string) events.APIGatewayProxyResponse {
+	if len(key) <= 0 {
+		message := "Key parameter must not be empty"
+		return events.APIGatewayProxyResponse{
+			Body:       message,
+			StatusCode: httpServerErrorCode,
+		}
+	}
+
+	table := dynamodb.InitService(dynamodb.Config{
+		Region: defaultAWSRegion,
+	})
+
+	err := table.DeleteItem(key)
+
+	if err != nil {
+		log.Fatalln(err.Error())
+		return events.APIGatewayProxyResponse{
+			Body:       err.Error(),
+			StatusCode: httpServerErrorCode,
+		}
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: httpSuccessCode,
+	}
+}
+
 func handleRequest(ctx context.Context,
 	request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	key := request.PathParameters[keyPathParameterName]
+	value := request.Body
 	httpMethod := request.HTTPMethod
 
 	var response events.APIGatewayProxyResponse
@@ -66,6 +123,12 @@ func handleRequest(ctx context.Context,
 	switch httpMethod {
 	case "GET":
 		response = handleGetRequest(key)
+		break
+	case "PUT":
+		response = handlePutRequest(key, value)
+		break
+	case "DELETE":
+		response = handleDeleteRequest(key)
 		break
 	}
 

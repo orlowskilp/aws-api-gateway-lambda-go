@@ -33,6 +33,20 @@ func (m *MockService) EXPECT() *MockServiceMockRecorder {
 	return m.recorder
 }
 
+// DeleteItem mocks base method.
+func (m *MockService) DeleteItem(key string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteItem", key)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteItem indicates an expected call of DeleteItem.
+func (mr *MockServiceMockRecorder) DeleteItem(key interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteItem", reflect.TypeOf((*MockService)(nil).DeleteItem), key)
+}
+
 // GetItem mocks base method.
 func (m *MockService) GetItem(key string) (*Item, error) {
 	m.ctrl.T.Helper()
@@ -46,4 +60,18 @@ func (m *MockService) GetItem(key string) (*Item, error) {
 func (mr *MockServiceMockRecorder) GetItem(key interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetItem", reflect.TypeOf((*MockService)(nil).GetItem), key)
+}
+
+// PutItem mocks base method.
+func (m *MockService) PutItem(key, value string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PutItem", key, value)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PutItem indicates an expected call of PutItem.
+func (mr *MockServiceMockRecorder) PutItem(key, value interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutItem", reflect.TypeOf((*MockService)(nil).PutItem), key, value)
 }
