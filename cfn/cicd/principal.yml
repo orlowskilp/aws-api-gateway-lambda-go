@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: IAM user and policy for CI/CD pipeline
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+        - Label:
+            default: IAM policy and user parameters
+          Parameters:
+            - ProjectName
+            - ArtifactS3BucketName
+            - LambdaFunctionName
+            - ResourceOwner
+
+    ParameterLabels:
+      ProjectName:
+        default: Project name
+      ArtifactS3BucketName:
+        default: Prefix of S3 bucket
+      LambdaFunctionName:
+        default: Name of HTTP request handling function
+      ResourceOwner:
+        default: Name of owner
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aws-api-gateway-lambda-go
+    MinLength: 1
+    MaxLength: 32
+    Description: Project name to be used as IAM resources prefix
+
+  ArtifactS3BucketName:
+    Type: String
+    Default: my-bucket.my-domain.com
+    MinLength: 1
+    MaxLength: 64
+    Description: DNS compatibile name of S3 bucket for CI/CD artifacts
+
+  LambdaFunctionName:
+    Type: String
+    Default: http-request-handler
+    MinLength: 1
+    MaxLength: 64
+    Description: Name of HTTP request handling Lambda function (for IAM policy)
+
+  ResourceOwner:
+    Type: String
+    Default: me
+    MinLength: 1
+    MaxLength: 64
+    Description: Owner (stored in tags)
+
+Resources:
+  CICDUser:
+    Type: AWS::IAM::User
+    Properties:
+      Path: /
+      UserName: !Sub ${ProjectName}-cicd-user
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-cicd-user
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  CICDPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${ProjectName}-cicd-policy
+      Description: Allows CI/CD pipeline access S3 and Lambda
+      Users:
+        - !Ref CICDUser
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Sid: ListObjectsInBucket
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub arn:aws:s3:::${ArtifactS3BucketName}
+          - Sid: PutObjectsIntoBucket
+            Effect: Allow
+            Action: s3:PutObject
+            Resource: !Sub arn:aws:s3:::${ArtifactS3BucketName}/*
+          - Sid: UpdateLambdaFunctionCode
+            Effect: Allow
+            Action: lambda:UpdateFunctionCode
+            Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}
+          - Sid: ValidateCloudFormationTemplates
+            Effect: Allow
+            Action: cloudformation:ValidateTemplate
+            Resource: "*" 
+
+Outputs:
+  CICDUserArn:
+    Description: ARN of IAM user to be used by CI/CD
+    Value: !GetAtt CICDUser.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-CICDUserArn

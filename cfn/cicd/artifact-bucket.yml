@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: S3 bucket for storing build artifacts
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+        - Label:
+            default: Artifact S3 bucket parameters
+          Parameters:
+            - BucketName
+            - Owner
+
+    ParameterLabels:
+      BucketName:
+        default: Name of S3 bucket
+      Owner:
+        default: Name of cluster owner
+
+Parameters: 
+  BucketName:
+    Type: String
+    Default: my-bucket.my-domain.com
+    MinLength: 1
+    MaxLength: 64
+    Description: DNS compatibile name of S3 bucket
+
+  Owner:
+    Type: String
+    Default: me
+    MinLength: 1
+    MaxLength: 64
+    Description: Owner (stored in tags)
+
+Resources:
+  ArtifactS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private
+      BucketName: !Ref BucketName
+      VersioningConfiguration: 
+        Status: Suspended
+      Tags:
+        - Key: Name
+          Value: !Ref BucketName
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Stack
+          Value: !Ref AWS::StackName
+
+Outputs:
+  ArtifactS3Bucket:
+    Description: S3 bucket for artifacts
+    Value: !Ref ArtifactS3Bucket
+    Export:
+      Name: !Sub ${AWS::StackName}-ArtifactS3Bucket
+
+  ArtifactS3BucketArn:
+    Description: ARN of S3 bucket for artifacts
+    Value: !GetAtt ArtifactS3Bucket.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ArtifactS3BucketArn
