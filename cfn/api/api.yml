@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: API routing requests to Lambda function
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+        - Label:
+            default: API stack parameters
+          Parameters:
+            - BackendStackName
+            - RestApiName
+            - RestApiStageName
+            - Owner
+
+    ParameterLabels:
+      BackendStackName:
+        default: Backend stack name
+      RestApiName:
+        default: REST API name
+      RestApiStageName:
+        default: API deployment stage name
+      Owner:
+        default: Owner of created resources
+
+Parameters:
+  BackendStackName:
+    Type: String
+    Default: api-backend
+    MinLength: 1
+    MaxLength: 64
+    Description: Name of stack with backend resources
+
+  RestApiName:
+    Type: String
+    Default: sample-api
+    MinLength: 1
+    MaxLength: 64
+    Description: Name of REST API
+
+  RestApiStageName:
+    Type: String
+    Default: v0
+    MinLength: 1
+    MaxLength: 16
+    Description: Deployment stage (e.g. v0 is a stage in https://myapi.com/v0)
+
+  Owner:
+    Type: String
+    Default: me
+    MinLength: 1
+    MaxLength: 64
+    Description: Owner (stored in tags)
+
+Resources:
+  # REST API declaration
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Ref RestApiName
+      Description: API routing requests to Lambda function
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Name
+          Value: !Ref RestApiName
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Stack
+          Value: !Ref AWS::StackName
+
+  # API resources declaration
+  KeyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: key
+      RestApiId: !Ref RestApi
+
+  KeyParameterResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref KeyResource
+      PathPart: "{key}"
+      RestApiId: !Ref RestApi
+
+  # API methods declaration
+  RootGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub 
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations
+          - LambdaFunctionArn:
+              Fn::ImportValue:
+                !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      OperationName: / GET method
+      ResourceId: !GetAtt RestApi.RootResourceId
+      RestApiId: !Ref RestApi
+
+  KeyParameterGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations
+          - LambdaFunctionArn:
+              Fn::ImportValue:
+                !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      OperationName: /key/{key} GET method
+      ResourceId: !Ref KeyParameterResource
+      RestApiId: !Ref RestApi
+
+  KeyParameterPutMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: PUT
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations
+          - LambdaFunctionArn:
+              Fn::ImportValue:
+                !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      OperationName: /key/{key} PUT method
+      ResourceId: !Ref KeyParameterResource
+      RestApiId: !Ref RestApi
+
+  KeyParameterDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: DELETE
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub 
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunctionArn}/invocations
+          - LambdaFunctionArn:
+              Fn::ImportValue:
+                !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      OperationName: /key/{key} DELETE method
+      ResourceId: !Ref KeyParameterResource
+      RestApiId: !Ref RestApi
+
+  # API model
+  Model:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      ContentType: 'application/json'
+      RestApiId: !Ref RestApi
+      Schema: {}
+
+  # API stage and its deployment
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref ApiDeployment
+      Description: !Sub "API deployment stage ${RestApiStageName}"
+      RestApiId: !Ref RestApi
+      StageName: !Ref RestApiStageName
+      Tags:
+        - Key: Name
+          Value: !Ref RestApiStageName
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Stack
+          Value: !Ref AWS::StackName
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - RootGetMethod
+      - KeyParameterGetMethod
+      - KeyParameterPutMethod
+      - KeyParameterDeleteMethod
+    Properties:
+      Description: Lambda API Deployment
+      RestApiId: !Ref RestApi
+
+  # Lambda function invocation permissions
+  RootGetLambdaInvokationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue:
+          !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/GET/
+
+  KeyParameterGetLambdaInvokationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue:
+          !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/GET/key/*
+
+  KeyParameterPutLambdaInvokationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue:
+          !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/PUT/key/*
+
+  KeyParameterDeleteLambdaInvokationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Fn::ImportValue:
+          !Sub ${BackendStackName}-HTTPRequestHandlerLambdaFunctionArn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/DELETE/key/*
+
+Outputs:
+  RootEndpointUri:
+    Description: Endpoint URI of the root GET function
+    Value: !Sub https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${RestApiStageName}
